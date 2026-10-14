@@ -1,7 +1,23 @@
 from maa.agent.agent_server import AgentServer
 from maa.custom_recognition  import CustomRecognition
 from maa.context import Context
-from utils import logger
+try:
+    from utils import logger
+except ImportError:
+    from agent.utils import logger
+
+try:
+    from utils.human_touch import get_human_click_point, human_touch_down_up
+    from utils.attention_coordinator import HumanAttentionCoordinator
+    from utils.utils import get_instance_id
+except ImportError:
+    try:
+        from agent.utils.human_touch import get_human_click_point, human_touch_down_up
+        from agent.utils.attention_coordinator import HumanAttentionCoordinator
+        from agent.utils.utils import get_instance_id
+    except ImportError:
+        from utils import get_human_click_point, human_touch_down_up, HumanAttentionCoordinator
+        from utils import get_instance_id
 
 @AgentServer.custom_recognition("invite")
 class invite(CustomRecognition):
@@ -32,13 +48,24 @@ class invite(CustomRecognition):
                        }
                 }
         )
-        box = [0,0,0,0]
-        for res in reco_result.all_results:
-            box = res.box
-        center_x = box[0] + box[2] // 2
-        center_y = box[1] + box[3] // 2 
-        context.tasker.controller.post_click(center_x, center_y).wait()
-        
+        # 搜索按钮安全区域，优先使用识别到的 box，未命中时回退到默认 ROI [336, 224, 64, 38]
+        target_box = [336, 224, 64, 38]
+        if reco_result and getattr(reco_result, "all_results", None):
+            for res in reco_result.all_results:
+                if getattr(res, "box", None):
+                    target_box = res.box
+        elif reco_result and getattr(reco_result, "box", None):
+            target_box = reco_result.box
+
+        click_x, click_y = get_human_click_point(target_box)
+        logger.debug(f"[invite] 拟人点击搜索位置: ({click_x}, {click_y})")
+        try:
+            instance_id = get_instance_id(context)
+        except Exception:
+            instance_id = "default"
+
+        with HumanAttentionCoordinator.acquire_focus(instance_id):
+            human_touch_down_up(context.tasker.controller, click_x, click_y)
 
 
        

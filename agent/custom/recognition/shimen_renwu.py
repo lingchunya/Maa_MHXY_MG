@@ -5,7 +5,23 @@ import json
 import random
 import time
 
-from utils import logger
+try:
+    from utils import logger
+except ImportError:
+    from agent.utils import logger
+
+try:
+    from utils.human_touch import get_human_click_point, human_touch_down_up
+    from utils.attention_coordinator import HumanAttentionCoordinator
+    from utils.utils import get_instance_id
+except ImportError:
+    try:
+        from agent.utils.human_touch import get_human_click_point, human_touch_down_up
+        from agent.utils.attention_coordinator import HumanAttentionCoordinator
+        from agent.utils.utils import get_instance_id
+    except ImportError:
+        from utils import get_human_click_point, human_touch_down_up, HumanAttentionCoordinator
+        from utils import get_instance_id
 
 
 @AgentServer.custom_recognition("shimen_renwu_decide")
@@ -17,7 +33,7 @@ class ShimenRenwuDecide(CustomRecognition):
     - **命中打造类任务**：``full_text`` 里出现 ``_50_MAP`` / ``_60_MAP`` 的某个装备名（value）→
       解析出对应的 (等级, 品类, 装备名)，``override_pipeline`` 改写 dazao 链路的三个 OCR 节点
       （选等级 / 选品类 / 装备名判定），``run_task("dazao")`` 启动打造，最后返回未识别（``box=None``）。
-    - **非打造类师门任务**：直接在 agent 内 ``post_click`` 点击识别框中心，等 7 秒（替代原节点
+    - **非打造类师门任务**：直接在 agent 内获取识别框高斯随机落点并进行拟人触控点击，等 7 秒（替代原节点
       ``post_delay:7000``），再 ``run_task`` 运行一次「抄本兜底」节点清除点击后出现的「使用抄本」按钮，
       最后返回未识别（``box=None``）。**本识别一律不返回命中信号**——点击副作用由 agent 侧完成.
     - **都没有**：返回 ``box=None``（未命中）；连续 ``_MISS_STREAK_LIMIT`` 次未命中则 ``run_task``
@@ -156,10 +172,15 @@ class ShimenRenwuDecide(CustomRecognition):
         # ② 非打造类师门任务：agent 内直接下发点击，返回未识别（box=None）
         for res in results:
             if "师门" in res.text:
-                center_x = res.box[0] + res.box[2] // 2
-                center_y = res.box[1] + res.box[3] // 2
-                logger.info(f"[shimen_decide] 识别到师门任务，agent 内点击 ({center_x}, {center_y})")
-                context.tasker.controller.post_click(center_x, center_y).wait()
+                click_x, click_y = get_human_click_point(res.box)
+                logger.info(f"[shimen_decide] 识别到师门任务，agent 内拟人点击 ({click_x}, {click_y})")
+                try:
+                    instance_id = get_instance_id(context)
+                except Exception:
+                    instance_id = "default"
+
+                with HumanAttentionCoordinator.acquire_focus(instance_id):
+                    human_touch_down_up(context.tasker.controller, click_x, click_y)
                 time.sleep(7)  # 原节点 post_delay:7000，等任务面板跳转
 
                 # 点击后面板可能出现「使用抄本」按钮 → 运行一次兜底节点清除。

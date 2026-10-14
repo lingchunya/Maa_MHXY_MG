@@ -1,15 +1,87 @@
-
+# -*- coding: utf-8 -*-
 from PIL import Image
 from maa.agent.agent_server import AgentServer
-from maa.custom_recognition  import CustomRecognition
+from maa.custom_recognition import CustomRecognition
 from maa.context import Context
-from typing import Dict, List, Tuple
-from utils import logger
-from utils import SendJinSan
-import time
+from typing import Dict, List, Tuple, Any
+import math
+import os
+import random
 import re
+import sys
+import time
 
-from .searchAnswer import SearchQuestions, format_answer
+try:
+    from utils import logger
+except ImportError:
+    from agent.utils import logger
+
+try:
+    from utils import SendJinSan
+except ImportError:
+    from agent.utils import SendJinSan
+
+try:
+    from utils.human_touch import get_human_click_point, human_touch_down_up
+    from utils.attention_coordinator import HumanAttentionCoordinator
+    from utils.utils import get_instance_id
+except ImportError:
+    try:
+        from agent.utils.human_touch import get_human_click_point, human_touch_down_up
+        from agent.utils.attention_coordinator import HumanAttentionCoordinator
+        from agent.utils.utils import get_instance_id
+    except ImportError:
+        from utils import get_human_click_point, human_touch_down_up, HumanAttentionCoordinator
+        from utils import get_instance_id
+
+try:
+    from .searchAnswer import SearchQuestions, format_answer
+except (ImportError, ValueError):
+    try:
+        from searchAnswer import SearchQuestions, format_answer
+    except ImportError:
+        try:
+            from agent.custom.recognition.searchAnswer import SearchQuestions, format_answer
+        except ImportError:
+            _cur_dir = os.path.dirname(os.path.abspath(__file__))
+            if _cur_dir not in sys.path:
+                sys.path.insert(0, _cur_dir)
+            from searchAnswer import SearchQuestions, format_answer
+
+# 三界奇缘第一选项区域 (x, y, w, h)，参考 sanjieqiyuan.json 中定义
+SJQY_FIRST_OPTION_BOX = [450, 340, 227, 92]
+
+
+def calculate_reading_delay(text: str = "", options: Any = None) -> float:
+    """
+    计算基于字符长度的对数正态/拟人认知延时：
+    认知延时 = 基础阅读时延 0.6s + 题目/选项字符数 * 0.05s + 随机浮动 0.3~0.8s
+    模拟真人读题审题认知过程。
+    """
+    char_count = len(text.strip()) if text else 0
+    if options:
+        if isinstance(options, dict):
+            for v in options.values():
+                if v:
+                    char_count += len(str(v).strip())
+        elif isinstance(options, (list, tuple, set)):
+            for v in options:
+                if v:
+                    char_count += len(str(v).strip())
+        elif isinstance(options, str):
+            char_count += len(options.strip())
+
+    base_delay = 0.6
+    char_delay = char_count * 0.05
+    # 随机浮动 0.3~0.8s（对数正态分布截断在 [0.3, 0.8]）
+    try:
+        raw_jitter = random.lognormvariate(math.log(0.51), 0.25)
+        random_jitter = max(0.3, min(0.8, raw_jitter))
+    except Exception:
+        random_jitter = random.uniform(0.3, 0.8)
+
+    return base_delay + char_delay + random_jitter
+
 
 @AgentServer.custom_recognition("reco2")
 class reco2_sjqy(CustomRecognition):
@@ -130,9 +202,23 @@ class sjqy_tiku_V3(CustomRecognition):
                 logger.info(f"[color:red]未与题库匹配。[/color]识别题目：{text}，匹配度：{confidence}，已经登记在线文档")
             else:
                 logger.error(f"登记在线文档失败:{text}")
-            time.sleep(2)
-            context.tasker.controller.post_click(500, 344).wait()
-            time.sleep(3)
+
+            # 基于字符长度的拟人认知阅读延时
+            reading_delay = calculate_reading_delay(text=text, options=answer_list)
+            time.sleep(reading_delay)
+
+            # 盲猜兜底：获取第一选项区域高斯随机落点并接入单人注意力调度器
+            click_x, click_y = get_human_click_point(SJQY_FIRST_OPTION_BOX)
+            try:
+                instance_id = get_instance_id(context)
+            except Exception:
+                instance_id = "default"
+
+            with HumanAttentionCoordinator.acquire_focus(instance_id):
+                human_touch_down_up(context.tasker.controller, click_x, click_y)
+
+            logger.info(f"[color:red]未与题库匹配，盲猜点击第一选项。[/color]识别题目：{text}，匹配度：{confidence}，落点：({click_x}, {click_y})，认知耗时：{reading_delay:.2f}s")
+            time.sleep(random.uniform(2.5, 3.0))
             return CustomRecognition.AnalyzeResult(box=(0,0,0,0),detail="题库缺少本问题")
         elif confidence >=80 and confidence < 100:
             
@@ -160,20 +246,41 @@ class sjqy_tiku_V3(CustomRecognition):
         # 点击答案
         if new_reco_detail and new_reco_detail.hit:
             box = new_reco_detail.box  # 假设box为(x, y, w, h)
-            center_x = box[0] + box[2] // 2
-            center_y = box[1] + box[3] // 2 
-            time.sleep(2)
-            context.tasker.controller.post_click(center_x, center_y).wait()
+            # 基于字符长度的拟人认知阅读延时
+            reading_delay = calculate_reading_delay(text=text, options=answer_list)
+            time.sleep(reading_delay)
+
+            # 获取选项点击落点截断高斯随机落点并接入注意力互斥锁
+            click_x, click_y = get_human_click_point(box)
+            try:
+                instance_id = get_instance_id(context)
+            except Exception:
+                instance_id = "default"
+
+            with HumanAttentionCoordinator.acquire_focus(instance_id):
+                human_touch_down_up(context.tasker.controller, click_x, click_y)
+
             # 等待点击操作完成
             # image2 = context.tasker.controller.post_screencap().wait().get()
             # logger.info(image2)
-            logger.info(f"[color:blue]正确点击答案。[/color]识别题目：{text}。题库答案：{results_value}。匹配度：{confidence}。")
-            time.sleep(2)
-        else:#没找到答案，点击的一个
-            time.sleep(2)
-            context.tasker.controller.post_click(500, 344).wait()
-            logger.info(f"[color:red]未在界面找到答案，点击第一个答案。[/color]识别题目：{text}。题库答案：{results_value}。匹配度：{confidence}。")
-            time.sleep(1)
+            logger.info(f"[color:blue]正确点击答案。[/color]识别题目：{text}。题库答案：{results_value}。匹配度：{confidence}。落点：({click_x}, {click_y})。认知耗时：{reading_delay:.2f}s")
+            time.sleep(random.uniform(1.8, 2.2))
+        else:#没找到答案，盲猜第一选项
+            # 基于字符长度的拟人认知阅读延时
+            reading_delay = calculate_reading_delay(text=text, options=answer_list)
+            time.sleep(reading_delay)
+
+            click_x, click_y = get_human_click_point(SJQY_FIRST_OPTION_BOX)
+            try:
+                instance_id = get_instance_id(context)
+            except Exception:
+                instance_id = "default"
+
+            with HumanAttentionCoordinator.acquire_focus(instance_id):
+                human_touch_down_up(context.tasker.controller, click_x, click_y)
+
+            logger.info(f"[color:red]未在界面找到答案，盲猜点击第一选项。[/color]识别题目：{text}。题库答案：{results_value}。匹配度：{confidence}。落点：({click_x}, {click_y})。认知耗时：{reading_delay:.2f}s")
+            time.sleep(random.uniform(1.0, 1.5))
 
         # logger.info(f"未在题库中搜索到答案次数:{NotAnswerCount}，请反馈开发者填充题库。")
         return CustomRecognition.AnalyzeResult(box=(0,0,0,0),detail="答题结束")

@@ -3,7 +3,23 @@ from maa.custom_action import CustomAction
 from maa.context import Context
 import json
 
-from utils import logger
+try:
+    from utils import logger
+except ImportError:
+    from agent.utils import logger
+
+try:
+    from utils.human_touch import get_human_click_point, human_touch_down_up
+    from utils.attention_coordinator import HumanAttentionCoordinator
+    from utils.utils import get_instance_id
+except ImportError:
+    try:
+        from agent.utils.human_touch import get_human_click_point, human_touch_down_up
+        from agent.utils.attention_coordinator import HumanAttentionCoordinator
+        from agent.utils.utils import get_instance_id
+    except ImportError:
+        from utils import get_human_click_point, human_touch_down_up, HumanAttentionCoordinator
+        from utils import get_instance_id
 
 @AgentServer.custom_action("returnOCR")
 class ReturnOCR(CustomAction):
@@ -50,20 +66,23 @@ class ReturnOCR(CustomAction):
             logger.info(f"{return_text}: {best_result.text}")
             # 根据action_key执行不同的动作
             if action_key == "Click":
-                # 点击传入参数中的坐标位置
+                # 点击传入参数中的坐标位置或最佳识别结果位置
+                target_box = None
                 if click_target:
-                    box = click_target
-                    center_x = box[0] + box[2] // 2
-                    center_y = box[1] + box[3] // 2
-                    logger.debug(f"点击位置: ({center_x}, {center_y})")
-                    context.tasker.controller.post_click(center_x, center_y).wait()
-                # 点击最佳识别结果的中心位置
+                    target_box = click_target
                 elif best_result:
-                    box = best_result.box
-                    center_x = box[0] + box[2] // 2
-                    center_y = box[1] + box[3] // 2
-                    logger.debug(f"点击位置: ({center_x}, {center_y})")
-                    context.tasker.controller.post_click(center_x, center_y).wait()
+                    target_box = getattr(best_result, "box", best_result)
+
+                if target_box:
+                    click_x, click_y = get_human_click_point(target_box)
+                    logger.debug(f"拟人点击位置: ({click_x}, {click_y})")
+                    try:
+                        instance_id = get_instance_id(context)
+                    except Exception:
+                        instance_id = "default"
+
+                    with HumanAttentionCoordinator.acquire_focus(instance_id):
+                        human_touch_down_up(context.tasker.controller, click_x, click_y)
                 else:
                     logger.warning("没有识别到结果，无法执行点击")
             elif action_key == "":

@@ -1,10 +1,63 @@
-from maa.agent.agent_server import AgentServer
-from maa.custom_recognition  import CustomRecognition
-from maa.context import Context
-from utils import logger
-import requests
+# -*- coding: utf-8 -*-
 import json
+import math
+import random
 import time
+from typing import Any
+
+from maa.agent.agent_server import AgentServer
+from maa.custom_recognition import CustomRecognition
+from maa.context import Context
+import requests
+
+try:
+    from utils import logger
+except ImportError:
+    from agent.utils import logger
+
+try:
+    from utils.human_touch import get_human_click_point, human_touch_down_up
+    from utils.attention_coordinator import HumanAttentionCoordinator
+    from utils.utils import get_instance_id
+except ImportError:
+    try:
+        from agent.utils.human_touch import get_human_click_point, human_touch_down_up
+        from agent.utils.attention_coordinator import HumanAttentionCoordinator
+        from agent.utils.utils import get_instance_id
+    except ImportError:
+        from utils import get_human_click_point, human_touch_down_up, HumanAttentionCoordinator
+        from utils import get_instance_id
+
+
+def calculate_reading_delay(text: str = "", options: Any = None) -> float:
+    """
+    计算基于字符长度的对数正态/拟人认知延时：
+    认知延时 = 基础阅读时延 0.6s + 题目/选项字符数 * 0.05s + 随机浮动 0.3~0.8s
+    模拟真人读题审题认知过程。
+    """
+    char_count = len(text.strip()) if text else 0
+    if options:
+        if isinstance(options, dict):
+            for v in options.values():
+                if v:
+                    char_count += len(str(v).strip())
+        elif isinstance(options, (list, tuple, set)):
+            for v in options:
+                if v:
+                    char_count += len(str(v).strip())
+        elif isinstance(options, str):
+            char_count += len(options.strip())
+
+    base_delay = 0.6
+    char_delay = char_count * 0.05
+    # 随机浮动 0.3~0.8s（对数正态分布截断在 [0.3, 0.8]）
+    try:
+        raw_jitter = random.lognormvariate(math.log(0.51), 0.25)
+        random_jitter = max(0.3, min(0.8, raw_jitter))
+    except Exception:
+        random_jitter = random.uniform(0.3, 0.8)
+
+    return base_delay + char_delay + random_jitter
 
 
 @AgentServer.custom_recognition("AIAnswer")
@@ -204,17 +257,38 @@ class AIAnswer(CustomRecognition):
                     return f"解析回复时出错: {e}"
             listAnswer= get_ai_answer(question,answer)
             # logger.info(f"listAnswer为：{listAnswer}")
-            # 点击box中心位置
-            def clickBox(box):
-                new_context = context.clone()
-                center_x = box[0] + box[2] // 2
-                center_y = box[1] + box[3] // 2 
-                time.sleep(2)
-                click_job = new_context.tasker.controller.post_click(center_x, center_y)
-                click_job.wait()  # 等待点击操作完成
-                # 向用户ui界面输出日志info
-                logger.info(f"AI返回答案：{listAnswer}。识别题目：{question}，识别答案列表：{answer}")
-                time.sleep(2)
+
+            # 拟人化点击选项区域
+            def clickBox(box, is_fallback=False):
+                # 基于字符长度的拟人认知阅读延时
+                reading_delay = calculate_reading_delay(question, answer)
+                time.sleep(reading_delay)
+
+                # 选项区域二维截断高斯随机落点
+                click_x, click_y = get_human_click_point(box)
+                try:
+                    instance_id = get_instance_id(context)
+                except Exception:
+                    instance_id = "default"
+
+                # 接入单人注意力调度器焦点互斥，并调用拟人按压触控
+                with HumanAttentionCoordinator.acquire_focus(instance_id):
+                    human_touch_down_up(context.tasker.controller, click_x, click_y)
+
+                if is_fallback:
+                    logger.info(
+                        f"[color:red]AI未返回有效答案（{listAnswer}），盲猜点击第一选项。[/color]"
+                        f"识别题目：{question}，识别答案列表：{answer}，"
+                        f"落点：({click_x}, {click_y})，认知耗时：{reading_delay:.2f}s"
+                    )
+                else:
+                    logger.info(
+                        f"[color:blue]AI返回答案：{listAnswer}。[/color]"
+                        f"识别题目：{question}，识别答案列表：{answer}，"
+                        f"落点：({click_x}, {click_y})，认知耗时：{reading_delay:.2f}s"
+                    )
+                time.sleep(random.uniform(1.8, 2.2))
+
             if listAnswer =="A" or listAnswer == "a":
                 abox=[509,306,269,91]
                 clickBox(abox)
@@ -228,8 +302,7 @@ class AIAnswer(CustomRecognition):
                 dbox= [831,404,265,96]
                 clickBox(dbox)
             else:
-                logger.info(f"ai返回值有问题：{listAnswer}，默认选择第a答案")
+                logger.info(f"ai返回值有问题：{listAnswer}，默认选择第a答案（高斯随机落点盲猜）")
                 abox=[509,306,269,91]
-                clickBox(abox)
+                clickBox(abox, is_fallback=True)
             return CustomRecognition.AnalyzeResult(box=(0,0,0,0),detail="ai答题完成")
-

@@ -31,7 +31,8 @@
         {
             "name": "官方混服",
             "path": [
-                "./resource/base"
+                "./resource/base",
+                "./resource/mac"
             ],
             "controller": [
                 "ADB"
@@ -41,7 +42,8 @@
             "name": "官服",
             "path": [
                 "./resource/base",
-                "./resource/NeteaseServer"
+                "./resource/NeteaseServer",
+                "./resource/mac"
             ],
             "controller": [
                 "ADB"
@@ -51,7 +53,8 @@
             "name": "九游",
             "path": [
                 "./resource/base",
-                "./resource/9game"
+                "./resource/9game",
+                "./resource/mac"
             ],
             "controller": [
                 "ADB"

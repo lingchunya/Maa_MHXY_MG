@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-from maa.custom_action import CustomAction
+try:
+    from maa.custom_action import CustomAction
+except ImportError:
+    CustomAction = None
 
 from typing import Dict, Any, Optional
 from contextlib import contextmanager
