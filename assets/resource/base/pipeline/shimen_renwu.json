@@ -90,6 +90,7 @@
             "识别拓印_停止",
             "师门完成确定-图片识别",
             "师门完成确定-文字识别",
+            "[JumpBack]关闭师门弹窗",
             "[JumpBack]识别拓印",
             "[JumpBack]师门完成-九转天阶遮挡",
             "[JumpBack]师门完成-九幽遮挡",
@@ -119,6 +120,7 @@
         "next": [
             "师门完成确定-图片识别",
             "师门完成确定-文字识别",
+            "[JumpBack]关闭师门弹窗",
             "[JumpBack]识别拓印",
             "[JumpBack]师门完成-九转天阶遮挡",
             "[JumpBack]师门完成-九幽遮挡",
@@ -190,7 +192,18 @@
             444,
             80
         ],
+        "action": "Click",
+        "target": [
+            528,
+            530,
+            122,
+            52
+        ],
+        "post_delay": 1500,
         "next": [
+            "师门完成确定-图片识别",
+            "师门完成确定-文字识别",
+            "关闭师门弹窗",
             "panduan_zhujiemian"
         ]
     },
@@ -205,7 +218,37 @@
             410,
             96
         ],
+        "action": "Click",
+        "target": [
+            528,
+            530,
+            122,
+            52
+        ],
+        "post_delay": 1500,
         "next": [
+            "师门完成确定-图片识别",
+            "师门完成确定-文字识别",
+            "关闭师门弹窗",
+            "panduan_zhujiemian"
+        ]
+    },
+    "关闭师门弹窗": {
+        "recognition": "TemplateMatch",
+        "template": [
+            "zonghe/shimen_GB.png"
+        ],
+        "roi": [
+            1097,
+            121,
+            30,
+            53
+        ],
+        "pre_delay": 500,
+        "action": "Click",
+        "post_delay": 1000,
+        "next": [
+            "关闭师门弹窗",
             "panduan_zhujiemian"
         ]
     },

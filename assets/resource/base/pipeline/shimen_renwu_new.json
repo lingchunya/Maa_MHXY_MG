@@ -112,6 +112,7 @@
         "next": [
             "师门完成确定-图片识别-v2",
             "师门完成确定-文字识别-v2",
+            "[JumpBack]关闭师门弹窗-v2",
             "[JumpBack]师门任务-任务分支-对话",
             "[JumpBack]师门任务-任务分支-兵器铺购买",
             "[JumpBack]任务分支-物品提交",
@@ -332,7 +333,18 @@
             444,
             80
         ],
+        "action": "Click",
+        "target": [
+            528,
+            530,
+            122,
+            52
+        ],
+        "post_delay": 1500,
         "next": [
+            "师门完成确定-图片识别-v2",
+            "师门完成确定-文字识别-v2",
+            "关闭师门弹窗-v2",
             "panduan_zhujiemian"
         ]
     },
@@ -347,7 +359,37 @@
             410,
             96
         ],
+        "action": "Click",
+        "target": [
+            528,
+            530,
+            122,
+            52
+        ],
+        "post_delay": 1500,
         "next": [
+            "师门完成确定-图片识别-v2",
+            "师门完成确定-文字识别-v2",
+            "关闭师门弹窗-v2",
+            "panduan_zhujiemian"
+        ]
+    },
+    "关闭师门弹窗-v2": {
+        "recognition": "TemplateMatch",
+        "template": [
+            "zonghe/shimen_GB.png"
+        ],
+        "roi": [
+            1097,
+            121,
+            30,
+            53
+        ],
+        "pre_delay": 500,
+        "action": "Click",
+        "post_delay": 1000,
+        "next": [
+            "关闭师门弹窗-v2",
             "panduan_zhujiemian"
         ]
     },
